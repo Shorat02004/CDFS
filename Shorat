@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Teacher Marksheet Collector</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body { font-family: sans-serif; margin: 0; background: #eef2fa; color: #222; }
+    #app { max-width: 960px; margin: 2rem auto; background: #fff; border-radius: 8px; box-shadow: 0 2px 16px #0002; padding: 2rem; }
+    h1, h2 { text-align: center; color: #2563eb; }
+    .form-row { display: flex; flex-wrap: wrap; gap: 1rem 2rem; margin-bottom: 1rem; }
+    .form-group { flex: 1 1 180px; min-width: 140px; }
+    label { font-weight: 600; display: block; margin-bottom: 0.3em; }
+    input, select, button { font-size: 1em; padding: 0.45em 0.7em; border-radius: 5px; border: 1.5px solid #ccc; margin-bottom: 0.6em; width: 100%; max-width: 340px; }
+    button { background: #2563eb; color: #fff; font-weight: bold; border: none; cursor: pointer; transition: background 0.2s; }
+    button:hover:not(:disabled) { background: #1741a6; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    .logout-btn { background: #d32f2f; }
+    .logout-btn:hover { background: #a02727; }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; background: #f9f9ff; }
+    th, td { padding: 0.7em 0.9em; border: 1px solid #ddd; text-align: center; }
+    th { background: #acc9fa; font-weight: 700; }
+    .actions button { margin-right: 0.3em; }
+    .message { min-height: 1.3em; font-size: 1em; margin: 0.5em 0 1em; }
+    .message.error { color: #d32f2f; font-weight: bold; }
+    .message.success { color: #388e3c; font-weight: bold; }
+    @media (max-width: 700px) {
+      #app { padding: 0.5rem; }
+      .form-row { flex-direction: column; }
+      input, select { max-width: 100%; }
+      th, td { font-size: 0.97em; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <h1>Teacher Marksheet Collector</h1>
+
+  <!-- Login -->
+  <section id="login-section">
+    <h2>Teacher Login</h2>
+    <div class="form-group">
+      <label for="login-username">Username</label>
+      <input id="login-username" type="text" autocomplete="username" />
+    </div>
+    <div class="form-group">
+      <label for="login-password">Password</label>
+      <input id="login-password" type="password" autocomplete="current-password" />
+    </div>
+    <button id="login-btn">Login</button>
+    <div id="login-message" class="message"></div>
+  </section>
+
+  <!-- Main Panel -->
+  <section id="main-section" style="display:none;">
+    <button id="logout-btn" class="logout-btn" style="float:right;">Logout</button>
+    <h2>Manage Classes & Students</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="class-select">Class</label>
+        <select id="class-select"></select>
+        <input id="new-class-name" type="text" placeholder="Add new class" />
+        <button id="add-class-btn">Add Class</button>
+        <div id="class-list"></div>
+      </div>
+      <div class="form-group">
+        <label for="student-select">Students</label>
+        <select id="student-select"></select>
+        <input id="new-student-name" type="text" placeholder="Add new student" />
+        <button id="add-student-btn">Add Student</button>
+        <div id="student-list"></div>
+      </div>
+    </div>
+
+    <h2>Subjects & Exam Types</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="subject-select">Subject</label>
+        <select id="subject-select"></select>
+        <input id="new-subject-name" type="text" placeholder="Add new subject" />
+        <button id="add-subject-btn">Add Subject</button>
+        <div id="subject-list"></div>
+      </div>
+      <div class="form-group">
+        <label for="examtype-select">Exam Type</label>
+        <select id="examtype-select"></select>
+        <input id="new-examtype-name" type="text" placeholder="Add new exam type" />
+        <button id="add-examtype-btn">Add Exam Type</button>
+        <div id="examtype-list"></div>
+      </div>
+    </div>
+
+    <h2>Enter Marks</h2>
+    <div class="form-row">
+      <div class="form-group">
+        <label for="marks-class">Class</label>
+        <select id="marks-class"></select>
+      </div>
+      <div class="form-group">
+        <label for="marks-subject">Subject</label>
+        <select id="marks-subject"></select>
+      </div>
+      <div class="form-group">
+        <label for="marks-examtype">Exam Type</label>
+        <select id="marks-examtype"></select>
+      </div>
+      <div class="form-group">
+        <label for="marks-date">Date</label>
+        <input id="marks-date" type="date" />
+      </div>
+    </div>
+    <div id="marksheet-form"></div>
+    <button id="save-marks-btn" disabled>Save Marks</button>
+    <div id="marks-message" class="message"></div>
+
+    <h2>Marksheet Report</h2>
+    <button id="export-btn">Export as CSV</button>
+    <div id="report-table"></div>
+  </section>
+</div>
+
+<script>
+const TEACHER_USERNAME = "teacher";
+const TEACHER_PASSWORD = "password123";
+
+let schoolData = {
+  classes: {},    // { "Class 1": [ "Student 1", ... ], ... }
+  subjects: [],
+  examTypes: []
+};
+let marksData = {}; // key: class|subject|examType|date => { student: marks, ... }
+
+function saveAll() {
+  localStorage.setItem("schoolData", JSON.stringify(schoolData));
+  localStorage.setItem("marksData", JSON.stringify(marksData));
+}
+function loadAll() {
+  let s = localStorage.getItem("schoolData");
+  if(s) schoolData = JSON.parse(s);
+  let m = localStorage.getItem("marksData");
+  if(m) marksData = JSON.parse(m);
+}
+function show(id) { document.getElementById(id).style.display = ""; }
+function hide(id) { document.getElementById(id).style.display = "none"; }
+function setMsg(id, msg, isErr) {
+  let el = document.getElementById(id);
+  el.textContent = msg;
+  el.className = isErr ? "message error" : "message success";
+}
+function clearMsg(id) { setMsg(id, "", false); }
+
+function updateClassSelects() {
+  let clSel = document.getElementById("class-select");
+  let mkClSel = document.getElementById("marks-class");
+  clSel.innerHTML = "";
+  mkClSel.innerHTML = "";
+  for(const c in schoolData.classes) {
+    let opt = document.createElement("option");
+    opt.value = opt.textContent = c;
+    clSel.appendChild(opt.cloneNode(true));
+    mkClSel.appendChild(opt.cloneNode(true));
+  }
+  updateStudentSelect();
+  updateStudentList();
+}
+function updateStudentSelect() {
+  let stSel = document.getElementById("student-select");
+  stSel.innerHTML = "";
+  let c = document.getElementById("class-select").value;
+  if(!c || !schoolData.classes[c]) return;
+  for(const s of schoolData.classes[c]) {
+    let opt = document.createElement("option");
+    opt.value = opt.textContent = s;
+    stSel.appendChild(opt);
+  }
+}
+function updateStudentList() {
+  let div = document.getElementById("student-list");
+  let c = document.getElementById("class-select").value;
+  if(!c || !schoolData.classes[c]) { div.innerHTML = ""; return;}
+  div.innerHTML = schoolData.classes[c].map(s => `<span>${s} <button onclick="removeStudent('${c}','${s}')">x</button></span>`).join("<br>");
+}
+function updateSubjectSelects() {
+  let sbSel = document.getElementById("subject-select");
+  let mkSbSel = document.getElementById("marks-subject");
+  sbSel.innerHTML = mkSbSel.innerHTML = "";
+  for(const s of schoolData.subjects) {
+    let opt = document.createElement("option");
+    opt.value = opt.textContent = s;
+    sbSel.appendChild(opt.cloneNode(true));
+    mkSbSel.appendChild(opt.cloneNode(true));
+  }
+  updateSubjectList();
+}
+function updateSubjectList() {
+  document.getElementById("subject-list").innerHTML =
+    schoolData.subjects.map(s => `<span>${s} <button onclick="removeSubject('${s}')">x</button></span>`).join("<br>");
+}
+function updateExamTypeSelects() {
+  let exSel = document.getElementById("examtype-select");
+  let mkExSel = document.getElementById("marks-examtype");
+  exSel.innerHTML = mkExSel.innerHTML = "";
+  for(const e of schoolData.examTypes) {
+    let opt = document.createElement("option");
+    opt.value = opt.textContent = e;
+    exSel.appendChild(opt.cloneNode(true));
+    mkExSel.appendChild(opt.cloneNode(true));
+  }
+  updateExamTypeList();
+}
+function updateExamTypeList() {
+  document.getElementById("examtype-list").innerHTML =
+    schoolData.examTypes.map(e => `<span>${e} <button onclick="removeExamType('${e}')">x</button></span>`).join("<br>");
+}
+
+// Remove class/student/subject/examtype
+function removeClass(cls) {
+  if(confirm("Delete class and all its students?")) {
+    delete schoolData.classes[cls];
+    // Remove related marks
+    for(const k in marksData)
+      if(k.startsWith(cls+"|")) delete marksData[k];
+    saveAll();
+    updateClassSelects();
+    updateReport();
+  }
+}
+function removeStudent(cls, st) {
+  schoolData.classes[cls] = schoolData.classes[cls].filter(s => s !== st);
+  // Remove marks for this student
+  for(const k in marksData) if(marksData[k][st]) delete marksData[k][st];
+  saveAll();
+  updateStudentSelect(); updateStudentList(); updateReport();
+}
+function removeSubject(s) {
+  schoolData.subjects = schoolData.subjects.filter(x => x !== s);
+  for(const k in marksData)
+    if(k.split("|")[1] === s) delete marksData[k];
+  saveAll(); updateSubjectSelects(); updateReport();
+}
+function removeExamType(e) {
+  schoolData.examTypes = schoolData.examTypes.filter(x => x !== e);
+  for(const k in marksData)
+    if(k.split("|")[2] === e) delete marksData[k];
+  saveAll(); updateExamTypeSelects(); updateReport();
+}
+
+// Add class/student/subject/examtype
+document.getElementById("add-class-btn").onclick = () => {
+  let c = document.getElementById("new-class-name").value.trim();
+  if(!c) { setMsg("login-message","Class name required",1); return;}
+  if(schoolData.classes[c]) { setMsg("login-message","Class exists",1); return;}
+  schoolData.classes[c] = [];
+  saveAll(); updateClassSelects();
+  document.getElementById("new-class-name").value = "";
+  setMsg("login-message","Class added",0);
+  setTimeout(()=>clearMsg("login-message"),800);
+};
+document.getElementById("add-student-btn").onclick = () => {
+  let c = document.getElementById("class-select").value;
+  let s = document.getElementById("new-student-name").value.trim();
+  if(!c) { setMsg("login-message","Select class",1); return;}
+  if(!s) { setMsg("login-message","Student name required",1); return;}
+  if(schoolData.classes[c].includes(s)) { setMsg("login-message","Student exists",1); return;}
+  schoolData.classes[c].push(s);
+  saveAll(); updateStudentSelect(); updateStudentList();
+  document.getElementById("new-student-name").value = "";
+  setMsg("login-message","Student added",0);
+  setTimeout(()=>clearMsg("login-message"),800);
+};
+document.getElementById("add-subject-btn").onclick = () => {
+  let s = document.getElementById("new-subject-name").value.trim();
+  if(!s) { setMsg("login-message","Subject name required",1); return;}
+  if(schoolData.subjects.includes(s)) { setMsg("login-message","Subject exists",1); return;}
+  schoolData.subjects.push(s); saveAll(); updateSubjectSelects();
+  document.getElementById("new-subject-name").value = "";
+  setMsg("login-message","Subject added",0);
+  setTimeout(()=>clearMsg("login-message"),800);
+};
+document.getElementById("add-examtype-btn").onclick = () => {
+  let e = document.getElementById("new-examtype-name").value.trim();
+  if(!e) { setMsg("login-message","Exam type required",1); return;}
+  if(schoolData.examTypes.includes(e)) { setMsg("login-message","Exam type exists",1); return;}
+  schoolData.examTypes.push(e); saveAll(); updateExamTypeSelects();
+  document.getElementById("new-examtype-name").value = "";
+  setMsg("login-message","Exam type added",0);
+  setTimeout(()=>clearMsg("login-message"),800);
+};
+
+// On class select change
+document.getElementById("class-select").onchange = () => { updateStudentSelect(); updateStudentList(); };
+
+// Login logic
+document.getElementById("login-btn").onclick = function() {
+  let u = document.getElementById("login-username").value.trim();
+  let p = document.getElementById("login-password").value;
+  if(u === TEACHER_USERNAME && p === TEACHER_PASSWORD) {
+    hide("login-section"); show("main-section");
+    clearMsg("login-message");
+    document.getElementById("login-username").value = "";
+    document.getElementById("login-password").value = "";
+    loadAll();
+    updateClassSelects();
+    updateSubjectSelects();
+    updateExamTypeSelects();
+    updateMarksForm();
+    updateReport();
+  } else {
+    setMsg("login-message","Invalid username or password",1);
+  }
+};
+document.getElementById("logout-btn").onclick = function() {
+  show("login-section"); hide("main-section");
+};
+
+// MARKSHEET ENTRY
+function updateMarksForm() {
+  let c = document.getElementById("marks-class").value;
+  let s = document.getElementById("marks-subject").value;
+  let e = document.getElementById("marks-examtype").value;
+  let d = document.getElementById("marks-date").value;
+  let students = schoolData.classes[c] || [];
+  let key = c && s && e && d ? `${c}|${s}|${e}|${d}` : null;
+  let prev = key ? (marksData[key]||{}) : {};
+  let form = "";
+  if(!c||!s||!e||!d||!students.length) {
+    document.getElementById("marksheet-form").innerHTML = "<em>Select class, subject, exam type, date</em>";
+    document.getElementById("save-marks-btn").disabled = true;
+    return;
+  }
+  form += `<table><tr><th>Student</th><th>Marks</th></tr>`;
+  for(const st of students) {
+    form += `<tr>
+      <td>${st}</td>
+      <td><input type="number" min="0" max="100" id="mark-${st.replace(/\W/g,'')}" value="${prev[st]!==undefined?prev[st]:""}" /></td>
+    </tr>`;
+  }
+  form += `</table>`;
+  document.getElementById("marksheet-form").innerHTML = form;
+  document.getElementById("save-marks-btn").disabled = false;
+}
+
+["marks-class","marks-subject","marks-examtype","marks-date"].forEach(id=>{
+  document.getElementById(id).onchange = updateMarksForm;
+});
+
+document.getElementById("save-marks-btn").onclick = function() {
+  let c = document.getElementById("marks-class").value;
+  let s = document.getElementById("marks-subject").value;
+  let e = document.getElementById("marks-examtype").value;
+  let d = document.getElementById("marks-date").value;
+  let students = schoolData.classes[c] || [];
+  let entry = {};
+  let valid = true;
+  for(const st of students) {
+    let val = document.getElementById("mark-"+st.replace(/\W/g,'')).value;
+    if(val === "" || isNaN(val) || val < 0 || val > 100) valid = false;
+    entry[st] = Number(val);
+  }
+  if(!valid) {
+    setMsg("marks-message","Enter marks for all students (0-100)",1);
+    return;
+  }
+  let key = `${c}|${s}|${e}|${d}`;
+  marksData[key] = entry;
+  saveAll();
+  setMsg("marks-message","Marks saved!",0);
+  updateReport();
+  setTimeout(()=>clearMsg("marks-message"),1200);
+};
+
+// REPORT
+function updateReport() {
+  let rows = [];
+  for(const k in marksData) {
+    let [c,s,e,d] = k.split("|");
+    for(const st in marksData[k]) {
+      rows.push({date:d,class:c,subject:s,exam:e,student:st,marks:marksData[k][st]});
+    }
+  }
+  rows.sort((a,b)=>b.date.localeCompare(a.date)||a.class.localeCompare(b.class)||a.subject.localeCompare(b.subject)||a.exam.localeCompare(b.exam)||a.student.localeCompare(b.student));
+  let html = `<table><tr>
+    <th>Date</th><th>Class</th><th>Subject</th><th>Exam</th><th>Student</th><th>Marks</th></tr>`;
+  if(!rows.length) html += `<tr><td colspan=6><em>No data</em></td></tr>`;
+  else for(const r of rows)
+    html += `<tr><td>${r.date}</td><td>${r.class}</td><td>${r.subject}</td><td>${r.exam}</td><td>${r.student}</td><td>${r.marks}</td></tr>`;
+  html += `</table>`;
+  document.getElementById("report-table").innerHTML = html;
+}
+
+// CSV EXPORT
+document.getElementById("export-btn").onclick = function() {
+  let rows = [["Date","Class","Subject","Exam Type","Student","Marks"]];
+  for(const k in marksData) {
+    let [c,s,e,d] = k.split("|");
+    for(const st in marksData[k])
+      rows.push([d,c,s,e,st,marksData[k][st]]);
+  }
+  let csv = rows.map(r=>r.map(x=>`"${(""+x).replace(/"/g,'""')}"`).join(",")).join("\r\n");
+  let blob = new Blob([csv], {type:"text/csv"});
+  let link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = "marksheet.csv";
+  link.click();
+};
+
+window.removeClass = removeClass;
+window.removeStudent = removeStudent;
+window.removeSubject = removeSubject;
+window.removeExamType = removeExamType;
+
+// On page load
+loadAll();
+updateClassSelects();
+updateSubjectSelects();
+updateExamTypeSelects();
+updateReport();
+
+</script>
+</body>
+</html>
